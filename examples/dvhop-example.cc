@@ -234,6 +234,7 @@ DVHopExample::CreateBeacons()
 }
 
 
+// Create the Wifi devices, install them, and connect them to the channel
 void
 DVHopExample::CreateDevices ()
 {
