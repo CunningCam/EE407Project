@@ -7,11 +7,9 @@
 #include "ns3/mobility-module.h"
 #include "ns3/point-to-point-module.h"
 #include "ns3/wifi-module.h"
-#include "ns3/wifi-mac-helper.h"
 #include "ns3/netanim-module.h"
 #include <iostream>
 #include <cmath>
-#include <vector>
 
 using namespace ns3;
 
@@ -28,7 +26,6 @@ class DVHopExample
 {
 public:
   DVHopExample ();
-  DVHopExample(uint32_t sz, double st, double tt, bool pc, bool pr);
   /// Configure script parameters, \return true on successful configuration
   bool Configure (int argc, char **argv);
   /// Run simulation
@@ -51,6 +48,12 @@ private:
   bool printRoutes;
   //\}
 
+  ///\name Node Termination
+  //\{
+  double nodeDeathRate;  // Node death rate parameter for the Weibull distribution
+  std::vector<Ptr<Node>> deadNodes;  // A list to keep track of dead nodes
+  //\}
+
   ///\name network
   //\{
   NodeContainer nodes;
@@ -59,6 +62,7 @@ private:
   //\}
 
 private:
+  void HandleNodeDeath();  // Method to simulate node termination
   void CreateNodes ();
   void CreateDevices ();
   void InstallInternetStack ();
@@ -68,33 +72,23 @@ private:
 
 int main (int argc, char **argv)
 {
-  DVHopExample test = DVHopExample(50, 50, 10, true, true);
+  DVHopExample test;
   if (!test.Configure (argc, argv))
     NS_FATAL_ERROR ("Configuration failed. Aborted.");
 
   test.Run ();
   test.Report (std::cout);
-
-  //DVHopExample test2 = 
-
   return 0;
 }
 
 //-----------------------------------------------------------------------------
 DVHopExample::DVHopExample () :
-  size (50),
-  step (50),
+  size (10),
+  step (100),
   totalTime (10),
   pcap (true),
-  printRoutes (true)
-{
-}
-DVHopExample::DVHopExample(uint32_t sz, double st, double tt, bool pc, bool pr):
-  size (sz),
-  step (st),
-  totalTime (tt),
-  pcap (pc),
-  printRoutes (pr)
+  printRoutes (true),
+  nodeDeathRate(1.0)  // Set the node death rate parameter
 {
 }
 
@@ -112,6 +106,7 @@ DVHopExample::Configure (int argc, char **argv)
   cmd.AddValue ("size", "Number of nodes.", size);
   cmd.AddValue ("time", "Simulation time, s.", totalTime);
   cmd.AddValue ("step", "Grid step, m", step);
+  cmd.AddValue ("nodeDeathRate", "Node death rate (Weibull scale parameter).", nodeDeathRate);
 
   cmd.Parse (argc, argv);
   return true;
@@ -124,15 +119,21 @@ DVHopExample::Run ()
   CreateNodes ();
   CreateDevices ();
   InstallInternetStack ();
+
   CreateBeacons();
 
   std::cout << "Starting simulation for " << totalTime << " s ...\n";
+  for (uint32_t i = 0; i < size; ++i)
+  {
+    double timeOfDeath = nodeDeathRate * std::rand();  // Generate a random time for node termination
+    Simulator::Schedule (Seconds(timeOfDeath), &DVHopExample::HandleNodeDeath, this, nodes.Get(i));
+  }
 
   Simulator::Stop (Seconds (totalTime));
 
- // AnimationInterface anim("animation.xml");
+  AnimationInterface anim("animation.xml");
 
-  Simulator::Run();
+  Simulator::Run ();
   Simulator::Destroy ();
 }
 
@@ -140,6 +141,18 @@ void
 DVHopExample::Report (std::ostream &)
 {
 }
+
+void DVHopExample::HandleNodeDeath(Ptr<Node> node)
+{
+  std::cout << "Node " << node->GetId() << " has died." << std::endl;
+
+  // Remove the node from the simulation
+  node->Dispose ();
+
+  // Add the dead node to the list of dead nodes
+  deadNodes.push_back(node);
+}
+
 
 void
 DVHopExample::CreateNodes ()
@@ -150,19 +163,18 @@ DVHopExample::CreateNodes ()
   for (uint32_t i = 0; i < size; ++i)
     {
       std::ostringstream os;
-      os << i;
-      std::cout << "Creating node: "<< os.str ()<< std::endl;
-      Names::Add (os.str(), nodes.Get (i));
+      os << "node-" << i;
+      std::cout << "Creating node: "<< os.str ()<< std::endl ;
+      Names::Add (os.str (), nodes.Get (i));
     }
   // Create static grid
   MobilityHelper mobility;
-
   mobility.SetPositionAllocator ("ns3::GridPositionAllocator",
                                  "MinX", DoubleValue (0.0),
                                  "MinY", DoubleValue (0.0),
                                  "DeltaX", DoubleValue (step),
-                                 "DeltaY", DoubleValue (step),
-                                 "GridWidth", UintegerValue (10),
+                                 "DeltaY", DoubleValue (0),
+                                 "GridWidth", UintegerValue (size),
                                  "LayoutType", StringValue ("RowFirst"));
   mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
   mobility.Install (nodes);
@@ -171,32 +183,29 @@ DVHopExample::CreateNodes ()
 void
 DVHopExample::CreateBeacons ()
 {
-  int b1 = rand() % size;
-  int b2 = rand() % size;
-  while(b2 == b1){
-    b2 = rand() % size;
-  }
-  int b3 = rand() % size;
-  while(b3 == b1 || b3 == b2){
-    b3 = rand() % size;
-  }
-
-  Ptr<Ipv4RoutingProtocol> proto = nodes.Get (8)->GetObject<Ipv4>()->GetRoutingProtocol ();
-  Ptr<dvhop::RoutingProtocol> dvhop = DynamicCast<dvhop::RoutingProtocol> (proto);
-  dvhop->SetIsBeacon (true);
-  dvhop->SetPosition (400, 0);
-
-
-  proto = nodes.Get (24)->GetObject<Ipv4>()->GetRoutingProtocol ();
-  dvhop = DynamicCast<dvhop::RoutingProtocol> (proto);
-  dvhop->SetIsBeacon (true);
-  dvhop->SetPosition (200, 100);
-
-
-  proto = nodes.Get (37)->GetObject<Ipv4>()->GetRoutingProtocol ();
-  dvhop = DynamicCast<dvhop::RoutingProtocol> (proto);
-  dvhop->SetIsBeacon (true);
-  dvhop->SetPosition (350, 150);
+  for (auto x : v)
+  {
+    if (std::find(deadNodes.begin(), deadNodes.end(), nodes.Get(x)) == deadNodes.end())
+    {
+      Ptr<Ipv4RoutingProtocol> proto = nodes.Get (0)->GetObject<Ipv4>()->GetRoutingProtocol ();
+      Ptr<dvhop::RoutingProtocol> dvhop = DynamicCast<dvhop::RoutingProtocol> (proto);
+      dvhop->SetIsBeacon (true);
+      dvhop->SetPosition (123.42, 4534.452);
+    
+    
+      proto = nodes.Get (4)->GetObject<Ipv4>()->GetRoutingProtocol ();
+      dvhop = DynamicCast<dvhop::RoutingProtocol> (proto);
+      dvhop->SetIsBeacon (true);
+      dvhop->SetPosition (6663.42, 566.646);
+    
+    
+      proto = nodes.Get (9)->GetObject<Ipv4>()->GetRoutingProtocol ();
+      dvhop = DynamicCast<dvhop::RoutingProtocol> (proto);
+      dvhop->SetIsBeacon (true);
+      dvhop->SetPosition (123.42, 9873.45);
+    }
+  }  
+  
 
 }
 
@@ -205,18 +214,18 @@ void
 DVHopExample::CreateDevices ()
 {
   WifiMacHelper wifiMac = WifiMacHelper();
-  wifiMac.SetType ("ns3::AdhocWifiMac");
-  YansWifiPhyHelper wifiPhy = YansWifiPhyHelper::Default ();
-  YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default ();
-  wifiPhy.SetChannel (wifiChannel.Create ());
+  wifiMac.SetType("ns3::AdhocWifiMac");
+  YansWifiPhyHelper wifiPhy = YansWifiPhyHelper::Default();
+  YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default();
+  wifiPhy.SetChannel(wifiChannel.Create());
   WifiHelper wifi = WifiHelper();
-  wifi.SetRemoteStationManager ("ns3::ConstantRateWifiManager", "DataMode", StringValue ("OfdmRate6Mbps"), "RtsCtsThreshold", UintegerValue (0));
-  devices = wifi.Install (wifiPhy, wifiMac, nodes);
+  wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager", "DataMode", StringValue("OfdmRate6Mbps"), "RtsCtsThreshold", UintegerValue(0));
+  devices = wifi.Install(wifiPhy, wifiMac, nodes);
 
   if (pcap)
-    {
-      wifiPhy.EnablePcapAll (std::string ("crit"));
-    }
+  {
+    wifiPhy.EnablePcapAll(std::string("crit"));
+  }
 }
 
 void

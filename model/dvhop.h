@@ -3,6 +3,7 @@
 #define DVHOP_H
 
 #include "ns3/node.h"
+#include "ns3/vector.h"
 #include "ns3/random-variable-stream.h"
 #include "ns3/output-stream-wrapper.h"
 #include "ns3/ipv4-routing-protocol.h"
@@ -29,14 +30,18 @@ namespace ns3 {
     public:
       static const uint32_t DVHOP_PORT;
       static TypeId GetTypeId (void);
-
+      Vector GetRealPosition() const;
+       Vector GetPosition() const;
 
       RoutingProtocol();
       virtual ~RoutingProtocol();
       virtual void DoDispose();
+       double nodeDeathRate;  // Node death rate parameter for the Weibull distribution
+  std::vector<Ptr<Node>> deadNodes;  
 
       //From Ipv4RoutingProtocol
       Ptr<Ipv4Route>  RouteOutput(Ptr<Packet> p, const Ipv4Header &header, Ptr<NetDevice> oif, Socket::SocketErrno &sockerr);
+      
       bool            RouteInput (Ptr<const Packet> p, const Ipv4Header &header, Ptr<const NetDevice> idev,
                                   UnicastForwardCallback   ufcb,
                                   MulticastForwardCallback mfcb,
@@ -58,11 +63,14 @@ namespace ns3 {
       double GetXPosition()               { return m_xPosition;}
       double GetYPosition()               { return m_yPosition;}
       bool  IsBeacon()                   { return m_isBeacon;}
+     
 
       void  PrintDistances(Ptr<OutputStreamWrapper> stream, Ptr<Node> node) const;
 
     private:
       //Start protocol operation
+      Vector realPosition;
+      Vector estimatedPosition;
       void        Start    ();
       void        SendTo   (Ptr<Socket> socket, Ptr<Packet> packet, Ipv4Address destination);
       void        RecvDvhop(Ptr<Socket> socket);
@@ -111,4 +119,3 @@ namespace ns3 {
 }
 
 #endif /* DVHOP_H */
-

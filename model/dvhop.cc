@@ -2,6 +2,7 @@
 
 #include "dvhop.h"
 #include "dvhop-packet.h"
+#include "ns3/vector.h"
 #include "ns3/log.h"
 #include "ns3/boolean.h"
 #include "ns3/random-variable-stream.h"
@@ -20,8 +21,8 @@ namespace ns3 {
 
   namespace dvhop{
 
-    NS_OBJECT_ENSURE_REGISTERED (RoutingProtocol);
 
+    NS_OBJECT_ENSURE_REGISTERED (RoutingProtocol);
 
     TypeId
     RoutingProtocol::GetTypeId (){
@@ -43,6 +44,7 @@ namespace ns3 {
 
 
     /// UDP Port for DV-Hop
+    
     const uint32_t RoutingProtocol::DVHOP_PORT = 1234;
 
 
@@ -55,7 +57,16 @@ namespace ns3 {
       m_seqNo (0)
     {
     }
+        
+    Vector RoutingProtocol::GetRealPosition() const {
+    // Assuming the real position is stored in the private member variable realPosition
+    return Vector(realPosition.x, realPosition.y, 0.0); // Assuming 2D positions, add 0.0 for the z-coordinate
+  }
 
+  Vector RoutingProtocol::GetPosition() const {
+    // Assuming the estimated position is stored in the private member variable estimatedPosition
+    return Vector(estimatedPosition.x, estimatedPosition.y, 0.0); // Assuming 2D positions, add 0.0 for the z-coordinate
+  }
 
 
     RoutingProtocol::~RoutingProtocol ()
@@ -254,6 +265,7 @@ namespace ns3 {
     }
 
 
+
     void
     RoutingProtocol::NotifyInterfaceDown (uint32_t interface)
     {
@@ -343,11 +355,17 @@ namespace ns3 {
 
 
     void
-    RoutingProtocol::PrintRoutingTable (Ptr<OutputStreamWrapper> stream, Time::Unit unit) const
-    {
-      *stream->GetStream () << "(" << m_ipv4->GetObject<Node>()->GetId() << " - Not implemented yet";
-    }
+RoutingProtocol::PrintRoutingTable (Ptr<OutputStreamWrapper> stream, Time::Unit unit) const
+{
+  *stream->GetStream () << "Routing table for Node " << m_ipv4->GetObject<Node>()->GetId() << ":\n";
 
+  std::vector<Ipv4Address> knownBeacons = m_disTable.GetKnownBeacons ();
+  for (const auto& beacon : knownBeacons) {
+    *stream->GetStream () << "Beacon: " << beacon << " - Hops: " << m_disTable.GetHopsTo(beacon)
+                          << " - Position: (" << m_disTable.GetBeaconPosition(beacon).first
+                          << ", " << m_disTable.GetBeaconPosition(beacon).second << ")\n";
+  }
+}
 
     void
     RoutingProtocol::PrintDistances (Ptr<OutputStreamWrapper> stream, Ptr<Node> node) const
@@ -497,8 +515,8 @@ namespace ns3 {
       Ipv4Address sender = inetSourceAddr.GetIpv4 ();
       Ipv4Address receiver = m_socketAddresses[socket].GetLocal ();
 
-      NS_LOG_DEBUG ("sender:           " << sender);
-      NS_LOG_DEBUG ("receiver:         " << receiver);
+      std::cout << "sender:           " << sender;
+      std::cout << "receiver:         " << receiver;
 
       FloodingHeader fHeader;
       packet->RemoveHeader (fHeader);
@@ -508,6 +526,7 @@ namespace ns3 {
       uint32_t diff;
       uint32_t newx = 0; 
       uint32_t newy = 0;
+      
 
       if(fHeader.GetBeaconAddress().Get() > receiver.Get()){
         diff = fHeader.GetBeaconAddress().Get() - receiver.Get(); //Left and Up
@@ -534,19 +553,22 @@ namespace ns3 {
         }
       }
 
+      Ptr<Node> thisNode = socket ->GetNode();
+      uint32_t nodeId = thisNode->GetId();
       std::cout << "Difference: " << diff << std::endl;
+      std::cout << "Node ID: "<< nodeId << std::endl;
       std::cout << "---Node's position--- XPos: " << newx << " | YPos: " << newy << std::endl;
 
       
 
       point approx;
-      point p1 = {4.0,4.0};
-      point p2 = {9.0,7.0};
-      point p3 = {9.0,1.0};
+      point p1 = {250,400};
+      point p2 = {150,200};
+      point p3 = {350,150};
       double r1, r2, r3;
-      r1 = 4;
-      r2 = 3;
-      r3 = 3.25;
+      r1 = 350;
+      r2 = 200;
+      r3 = 350;
 
       approx = trilateration(p1, p2, p3, r1, r2, r3);
       std::cout << "TRILATERATION TEST: (" << approx.x << ", " << approx.y << ")" << std::endl; 
@@ -608,9 +630,6 @@ namespace ns3 {
 	}
     }
 
-    
-
-
-  }
 }
 
+}

@@ -35,6 +35,8 @@ public:
   void Run ();
   /// Report results
   void Report (std::ostream & os);
+  void LogLocalizationData();
+  std::ofstream& GetLatencyLogFile();
 
 private:
   ///\name parameters
@@ -49,22 +51,45 @@ private:
   bool pcap;
   /// Print routes if true
   bool printRoutes;
+  
   //\}
+  ///\name Node Termination
+  //\{
+  double nodeDeathRate;  // Node death rate parameter for the Weibull distribution
+  std::vector<Ptr<Node>> deadNodes;  // A list to keep track of dead nodes
+  //\}
+
 
   ///\name network
   //\{
   NodeContainer nodes;
   NetDeviceContainer devices;
   Ipv4InterfaceContainer interfaces;
+  std::ofstream latencyLogFile;
+  std::ofstream localizationLogFile;
   //\}
 
 private:
+  void GetTruePositions();
+  Vector GetRealPosition(uint32_t nodeId) const;
   void CreateNodes ();
+  void CheckAndStopNodes();
+  void SimulateCriticalCondition();
+  void SetCriticalCondition();
   void CreateDevices ();
   void InstallInternetStack ();
   void InstallApplications ();
+  std::vector<bool> criticalCondition;
+bool criticalConditionEnabled;
+  void SimulateCriticalCondition(uint32_t nodeId, double criticalTime);
+  void SetCriticalCondition(uint32_t nodeId, bool condition);
+
   void CreateBeacons();
   void PrintLoc();
+  double CalculateDistance(const Vector& realPosition, const Vector& estimatedPosition) const {
+    return (realPosition - estimatedPosition).GetLength();
+  }
+  
 };
 
 int main (int argc, char **argv)
@@ -86,6 +111,13 @@ DVHopExample::DVHopExample () :
   pcap (true),
   printRoutes (true)
 {
+  localizationLogFile.open("localization_data.csv");
+  localizationLogFile << "Time,Node,RealX,RealY,EstimatedX,EstimatedY,LocalizationError\n";
+}
+
+std::ofstream& DVHopExample::GetLatencyLogFile()
+{
+  return latencyLogFile;
 }
 
 bool
@@ -124,7 +156,7 @@ DVHopExample::Run ()
   AnimationInterface anim("animation.xml");
 
   Simulator::Run ();
-  PrintLoc();
+  LogLocalizationData();
   Simulator::Destroy ();
 }
 
@@ -159,6 +191,14 @@ DVHopExample::CreateNodes ()
   mobility.Install (nodes);
 }
 
+void DVHopExample::GetTruePositions() {
+  for (uint32_t i = 0; i < size; ++i) {
+    Ptr<ConstantPositionMobilityModel> mobility =
+        nodes.Get(i)->GetObject<ConstantPositionMobilityModel>();
+    Vector pos = mobility->GetPosition();
+    std::cout << "Node " << i << " true position: (" << pos.x << ", " << pos.y << ")\n";
+  }
+}
 void
 DVHopExample::CreateBeacons()
 {
@@ -234,7 +274,6 @@ DVHopExample::CreateBeacons()
 }
 
 
-// Create the Wifi devices, install them, and connect them to the channel
 void
 DVHopExample::CreateDevices ()
 {
@@ -252,6 +291,25 @@ DVHopExample::CreateDevices ()
       wifiPhy.EnablePcapAll (std::string ("aodv"));
     }
 }
+
+void DVHopExample::LogLocalizationData() {
+  for (uint32_t i = 0; i < size; ++i) {
+    Ptr<Ipv4RoutingProtocol> proto = nodes.Get(i)->GetObject<Ipv4>()->GetRoutingProtocol();
+    Ptr<dvhop::RoutingProtocol> dvhop = DynamicCast<dvhop::RoutingProtocol>(proto);
+
+    Vector realPosition = dvhop->GetRealPosition();
+    Vector estimatedPosition = dvhop->GetPosition();
+    double localizationError = CalculateDistance(realPosition, estimatedPosition);
+
+    // Log the data to a file
+    localizationLogFile << Simulator::Now().GetSeconds() << ","
+                        << i << ","
+                        << realPosition.x << "," << realPosition.y << ","
+                        << estimatedPosition.x << "," << estimatedPosition.y << ","
+                        << localizationError << "\n";
+  }
+}
+
 
 void
 DVHopExample::InstallInternetStack ()
@@ -274,6 +332,55 @@ DVHopExample::InstallInternetStack ()
       dvhop.PrintRoutingTableAllAt (Seconds (8), routingStream);
     }
 }
+
+void DVHopExample::SetCriticalCondition(uint32_t nodeId, bool condition)
+{
+  this->criticalCondition[nodeId] = condition;
+}
+
+void DVHopExample::SimulateCriticalCondition(uint32_t nodeId, double criticalTime)
+{
+ std::cout << "Node " << nodeId << " will enter critical condition at time " << criticalTime << " s\n";
+
+  // Calculate the number of time steps needed to reach criticalTime
+  uint32_t stepsToCriticalTime = static_cast<uint32_t>(criticalTime);
+
+  for (uint32_t step = 0; step <= stepsToCriticalTime; ++step)
+  {
+    CheckAndStopNodes();
+    Simulator::Schedule(Seconds(1.0), &DVHopExample::CheckAndStopNodes, this);
+  }
+
+  // Set critical condition for the specified node
+  SetCriticalCondition(nodeId, true);
+}
+
+
+void DVHopExample::CheckAndStopNodes()
+{
+  for (uint32_t i = 0; i < size; ++i)
+  {
+    if (this->criticalCondition[i])
+    {
+      std::cout << "Node " << i << " is in critical condition. Stopping...\n";
+      this->nodes.Get(i)->GetObject<MobilityModel>()->SetPosition(Vector(0, 0, 0));
+      this->criticalCondition[i] = false; // Reset critical condition after stopping the node
+    }
+  }
+}
+
+void DVHopExample::HandleNodeDeath(Ptr<Node> node)
+{
+  std::cout << "Node " << node->GetId() << " has died." << std::endl;
+
+  // Remove the node from the simulation
+  node->Dispose ();
+
+  // Add the dead node to the list of dead nodes
+  deadNodes.push_back(node);
+}
+
+
 
 void DVHopExample::PrintLoc(){
   

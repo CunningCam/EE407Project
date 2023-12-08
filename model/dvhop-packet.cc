@@ -6,25 +6,22 @@ namespace ns3
 {
   namespace dvhop
   {
-    // Ensure the FloodingHeader class is registered with ns-3's TypeId system
+
     NS_OBJECT_ENSURE_REGISTERED (FloodingHeader);
 
-    // Default constructor
     FloodingHeader::FloodingHeader()
     {
     }
 
-    // Constructor with parameters
     FloodingHeader::FloodingHeader(double xPos, double yPos, uint16_t seqNo, uint16_t hopCount, Ipv4Address beacon)
     {
-      m_xPos     = xPos;      // X position of the node
-      m_yPos     = yPos;      // Y position of the node
-      m_seqNo    = seqNo;     // Sequence number of the packet
-      m_hopCount = hopCount;  // Hop count from the source
-      m_beaconId = beacon;    // IP address of the beacon node
+      m_xPos     = xPos;
+      m_yPos     = yPos;
+      m_seqNo    = seqNo;
+      m_hopCount = hopCount;
+      m_beaconId = beacon;
     }
 
-    // Get the TypeId of the class
     TypeId
     FloodingHeader::GetTypeId ()
     {
@@ -40,18 +37,17 @@ namespace ns3
       return GetTypeId ();
     }
 
-    // Get the serialized size of the header
     uint32_t
     FloodingHeader::GetSerializedSize () const
     {
       return 24; //Total number of bytes when serialized
     }
 
-    // Serialize the header to a buffer
     void
     FloodingHeader::Serialize (Buffer::Iterator start) const
     {
-      // Serialize the X and Y positions as uint64_t
+      //The position info are serialized as uint64_t, though they're doubles
+      //We convert the double to a unsigned long and then serialize that number
       double x = m_xPos;
       uint64_t dst;
       char *const p = reinterpret_cast<char*>(&x);
@@ -63,19 +59,17 @@ namespace ns3
       std::copy(p2, p2+sizeof(uint64_t), reinterpret_cast<char*>(&dst));
       start.WriteHtonU64 (dst);
 
-      // Serialize the sequence number, hop count, and beacon ID
       start.WriteU16 (m_seqNo);
       start.WriteU16 (m_hopCount);
       WriteTo(start, m_beaconId);
     }
 
-    // Deserialize the header from a buffer
     uint32_t
     FloodingHeader::Deserialize (Buffer::Iterator start)
     {
       Buffer::Iterator i = start;
 
-      // Deserialize the X and Y positions, sequence number, hop count, and beacon ID
+
       uint64_t midX = i.ReadNtohU64 ();
       char *const p = reinterpret_cast<char*>(&midX);
       std::copy(p, p + sizeof(double), reinterpret_cast<char*>(&m_xPos));
@@ -97,7 +91,6 @@ namespace ns3
       return dist;
     }
 
-    // Print the header to an output stream
     void
     FloodingHeader::Print (std::ostream &os) const
     {
@@ -105,12 +98,14 @@ namespace ns3
 
     }
 
-    // Overload the << operator to print the header
     std::ostream &
     operator<< (std::ostream &os, FloodingHeader const &h)
     {
       h.Print (os);
       return os;
     }
+
+
+
   }
 }
